@@ -401,6 +401,7 @@ public class UpsertAmazonLoadBalancerV2Description extends UpsertAmazonLoadBalan
     private String priority;
     private List<Action> actions;
     private List<RuleCondition> conditions;
+    private Boolean isDefault;
 
     public String getPriority() {
       return priority;
@@ -424,6 +425,18 @@ public class UpsertAmazonLoadBalancerV2Description extends UpsertAmazonLoadBalan
 
     public void setConditions(List<RuleCondition> conditions) {
       this.conditions = conditions;
+    }
+
+    public Boolean getIsDefault() {
+      if (isDefault == null) {
+        return Boolean.FALSE;
+      } else {
+        return isDefault;
+      }
+    }
+
+    public void setIsDefault(Boolean isDef) {
+      isDefault = isDef;
     }
   }
 }

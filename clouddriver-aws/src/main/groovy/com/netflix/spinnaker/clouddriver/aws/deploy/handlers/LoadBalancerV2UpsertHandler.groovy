@@ -39,6 +39,7 @@ class LoadBalancerV2UpsertHandler {
   private static String modifyTargetGroupAttributes(AmazonElasticLoadBalancing loadBalancing, LoadBalancer loadBalancer, TargetGroup targetGroup, UpsertAmazonLoadBalancerV2Description.Attributes attributes) {
     return modifyTargetGroupAttributes(loadBalancing, loadBalancer, targetGroup, attributes, null)
   }
+
   private static String modifyTargetGroupAttributes(AmazonElasticLoadBalancing loadBalancing, LoadBalancer loadBalancer, TargetGroup targetGroup, UpsertAmazonLoadBalancerV2Description.Attributes attributes, DeployDefaults deployDefaults) {
     def targetGroupAttributes = []
     if (attributes) {
@@ -57,8 +58,8 @@ class LoadBalancerV2UpsertHandler {
           targetGroupAttributes.add(new TargetGroupAttribute(key: "stickiness.lb_cookie.duration_seconds", value: attributes.stickinessDuration.toString()))
         }
       }
-      if(loadBalancer.type == 'network' ){
-        if(attributes.proxyProtocolV2 != null){
+      if (loadBalancer.type == 'network') {
+        if (attributes.proxyProtocolV2 != null) {
           targetGroupAttributes.add(new TargetGroupAttribute(key: "proxy_protocol_v2.enabled", value: attributes.proxyProtocolV2))
         }
       }
@@ -110,7 +111,7 @@ class LoadBalancerV2UpsertHandler {
           }
         }
 
-        CreateTargetGroupResult createTargetGroupResult = loadBalancing.createTargetGroup( createTargetGroupRequest )
+        CreateTargetGroupResult createTargetGroupResult = loadBalancing.createTargetGroup(createTargetGroupRequest)
         task.updateStatus BASE_PHASE, "Target group created in ${loadBalancerName} (${targetGroup.name}:${targetGroup.port}:${targetGroup.protocol})."
         createdTargetGroup = createTargetGroupResult.getTargetGroups().get(0)
       } catch (AmazonServiceException e) {
@@ -152,7 +153,9 @@ class LoadBalancerV2UpsertHandler {
 
   static void updateTargetGroups(List<TargetGroup> targetGroupsToUpdate, List<UpsertAmazonLoadBalancerV2Description.TargetGroup> updatedTargetGroups, AmazonElasticLoadBalancing loadBalancing, LoadBalancer loadBalancer, List<String> amazonErrors) {
     targetGroupsToUpdate.each { awsTargetGroup ->
-      UpsertAmazonLoadBalancerV2Description.TargetGroup targetGroup = updatedTargetGroups.find({ it.name == awsTargetGroup.getTargetGroupName() })
+      UpsertAmazonLoadBalancerV2Description.TargetGroup targetGroup = updatedTargetGroups.find({
+        it.name == awsTargetGroup.getTargetGroupName()
+      })
 
       ModifyTargetGroupRequest modifyTargetGroupRequest = new ModifyTargetGroupRequest()
         .withTargetGroupArn(awsTargetGroup.targetGroupArn)
@@ -387,23 +390,31 @@ class LoadBalancerV2UpsertHandler {
 
     // Can't modify the port or protocol of a target group, so if changed, have to delete/recreate
     List<List<TargetGroup>> targetGroupsSplit = existingTargetGroups.split { awsTargetGroup ->
-      (targetGroups.find { it.name == awsTargetGroup.targetGroupName &&
-                            it.port == awsTargetGroup.port &&
-                            it.protocol.toString() == awsTargetGroup.protocol }) == null
+      (targetGroups.find {
+        it.name == awsTargetGroup.targetGroupName &&
+          it.port == awsTargetGroup.port &&
+          it.protocol.toString() == awsTargetGroup.protocol
+      }) == null
     }
     List<TargetGroup> targetGroupsToRemove = targetGroupsSplit[0]
     List<TargetGroup> targetGroupsToUpdate = targetGroupsSplit[1]
 
     List<String> targetGroupArnsToRemove = targetGroupsToRemove.collect { it.targetGroupArn }
     List<UpsertAmazonLoadBalancerV2Description.TargetGroup> targetGroupsToCreate = targetGroups.findAll { targetGroup ->
-      (existingTargetGroups.find { targetGroup.name == it.targetGroupName &&
-        targetGroup.port == it.port &&
-        targetGroup.protocol.toString() == it.protocol }) == null
+      (existingTargetGroups.find {
+        targetGroup.name == it.targetGroupName &&
+          targetGroup.port == it.port &&
+          targetGroup.protocol.toString() == it.protocol
+      }) == null
     }
 
     // Find and remove all listeners associated with removed target groups and remove them from existingListeners
     List<Listener> listenersToRemove = existingListeners.findAll { listener ->
-      existingListenerToRules.get(listener).any { rule -> rule.actions.any { targetGroupArnsToRemove.contains(it.targetGroupArn) } }
+      existingListenerToRules.get(listener).any { rule ->
+        rule.actions.any {
+          targetGroupArnsToRemove.contains(it.targetGroupArn)
+        }
+      }
     }
     removeListeners(listenersToRemove, existingListeners, loadBalancing, loadBalancer)
 
@@ -434,7 +445,13 @@ class LoadBalancerV2UpsertHandler {
           new RuleCondition().withField(condition.field).withValues(condition.values)
         }
 
-        rules.add(new Rule().withActions(actions).withConditions(conditions).withPriority(rule.priority))
+        rules.add(
+          new Rule()
+            .withActions(actions)
+            .withConditions(conditions)
+            .withPriority(rule.priority)
+            .withIsDefault(rule.isDefault)
+        )
       }
       listenerToRules.put(listener, rules)
     }
@@ -457,7 +474,7 @@ class LoadBalancerV2UpsertHandler {
 
     // Update listeners
     listenersToUpdate.each { listener ->
-      UpsertAmazonLoadBalancerV2Description.Listener updatedListener = listeners.find {it.port == listener.port }
+      UpsertAmazonLoadBalancerV2Description.Listener updatedListener = listeners.find { it.port == listener.port }
       updateListener(listener.listenerArn,
         updatedListener,
         listenerToDefaultActions.get(updatedListener),
