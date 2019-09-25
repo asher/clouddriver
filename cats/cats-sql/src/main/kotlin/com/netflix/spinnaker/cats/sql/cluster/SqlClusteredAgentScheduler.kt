@@ -99,11 +99,17 @@ class SqlClusteredAgentScheduler(
   ) {
     if (agent is AgentSchedulerAware) {
       agent.agentScheduler = this
+      log.debug("SqlClusteredAgentScheduler: scheduling AgentSchedulerAware agentType: ${agent.agentType}, " +
+        "provider: ${agent.providerName}, scheduler: ${agent.agentScheduler}")
+    } else {
+      log.debug("SqlClusteredAgentScheduler: scheduling non-AgentSchedulerAware agentType: ${agent.agentType}; " +
+        "provider: ${agent.providerName}")
     }
     agents[agent.agentType] = AgentExecutionAction(agent, agentExecution, executionInstrumentation)
   }
 
   override fun unschedule(agent: Agent) {
+    log.debug("SqlClusteredAgentScheduler: unscheduling agentType: ${agent.agentType}, provider: ${agent.providerName}")
     releaseLock(agent.agentType, 0) // Release the lock immediately
     agents.remove(agent.agentType)
   }
@@ -115,16 +121,23 @@ class SqlClusteredAgentScheduler(
       } catch (t: Throwable) {
         log.error("Failed running cache agents", t)
       }
+    } else {
+      log.debug("Skipping SqlClusteredAgentScheduler run, node is not enabled. ${agents.size} agents registered.")
     }
   }
 
   private fun runAgents() {
+    log.debug("SqlClusteredAgentScheduler: attempting to acquire locks, ${agents.size} agents registered.")
     val acquiredAgents = tryAcquire()
+    log.debug("SqlClusteredAgentScheduler: acquired ${acquiredAgents.size} agents: ${acquiredAgents.keys}")
     activeAgents.putAll(acquiredAgents)
     acquiredAgents.forEach { agentType, nextAttempt ->
       val exec = agents[agentType]
       if (exec != null) {
+        log.debug("SqlClusteredAgentScheduler: submitting $agentType on agentExecutionPool")
         agentExecutionPool.submit(AgentJob(nextAttempt, exec, this::agentCompleted))
+      } else {
+        log.error("SqlClusteredAgentScheduler: AgentExecutionAction is null for $agentType")
       }
     }
   }
@@ -166,6 +179,14 @@ class SqlClusteredAgentScheduler(
       .filter { enabledAgents.matcher(it.key).matches() }
       .toMutableMap()
 
+    val disabledAgents = agents
+      .filter { !enabledAgents.matcher(it.key).matches() }
+      .toMutableMap()
+
+    log.debug("SqlClusteredAgentScheduler: availableAgents: $availableAgents, " +
+      "enabledPattern: ${enabledAgents.pattern()} " +
+      "disabledAgents: ${disabledAgents.keys}, candidateAgentLocks: ${candidateAgentLocks.keys}")
+
     withPool(POOL_NAME) {
       val existingLocks = jooq.select(field("agent_name"), field("lock_expiry"))
         .from(table(lockTable))
@@ -201,6 +222,8 @@ class SqlClusteredAgentScheduler(
         trimmedCandidates[k] = v
       }
 
+    log.debug("SqlClusteredAgentScheduler: trimmedCandidates: ${trimmedCandidates.keys}")
+
     return trimmedCandidates
   }
 
@@ -233,6 +256,7 @@ class SqlClusteredAgentScheduler(
   }
 
   private fun releaseLock(agentType: String, nextExecutionTime: Long) {
+    log.debug("SqlClusteredAgentScheduler: releasing lock for $agentType, nextExecutionTime: $nextExecutionTime")
     val newTtl = nextExecutionTime - System.currentTimeMillis()
 
     withPool(POOL_NAME) {
